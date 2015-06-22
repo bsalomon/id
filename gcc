@@ -1,0 +1,2 @@
+include build.ninja
+cc = gcc-5 -Wall -Wextra
