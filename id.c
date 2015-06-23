@@ -1,13 +1,16 @@
 #include <assert.h>
-#include <dispatch/dispatch.h>
 #include <ftw.h>
-#include <immintrin.h>
-#include <png.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+
+#include <immintrin.h>
+
+#include <CommonCrypto/CommonDigest.h>
+#include <dispatch/dispatch.h>
+#include <png.h>
 
 #define UNUSED __attribute__((unused))
 
@@ -36,6 +39,7 @@ static struct {
     int diffs;
     uint32_t max;
     enum state state;
+    uint8_t md5[16];
 
     int padding;
 } work[MANY];
@@ -153,6 +157,8 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 }
                 work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
                 work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
+
+                CC_MD5(u.pixels, (CC_LONG)(4*u.w*u.h), work[i].md5);
             }
         }
         munmap((void*)g, glen);
@@ -187,7 +193,11 @@ int main(int argc, char** argv) {
             printf("%s:\n", state_name[state]);
             for (size_t i = 0; i < nwork; i++) {
                 if (work[i].state == state) {
-                    printf("\t%d\t0x%08x\t%s\n", work[i].diffs, work[i].max, work[i].suffix);
+                    printf("\t%d\t0x%08x\t", work[i].diffs, work[i].max);
+                    for (int j = 0; j < 16; j++) {
+                        printf("%02x", work[i].md5[j]);
+                    }
+                    printf("\t%s\n", work[i].suffix);
                 }
             }
         }
