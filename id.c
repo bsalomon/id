@@ -36,12 +36,11 @@ static size_t nwork = 0;
 static struct {
     const char* suffix;  // on heap, cleanup with free()
     struct bitmap ugly;
-    int diffs;
+    const char* uglypath;
+
+    size_t diffs;
     uint32_t max;
     enum state state;
-    uint8_t md5[16];
-
-    int padding;
 } work[MANY];
 
 static int find_work(const char* fpath, const struct stat* sb UNUSED, int typeflag) {
@@ -161,7 +160,20 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
                 work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
 
-                CC_MD5(u->pixels, (CC_LONG)(4*u->w*u->h), work[i].md5);
+                uint8_t md5[16];
+
+                CC_MD5(u->pixels, (CC_LONG)(4*u->w*u->h), md5);
+
+                size_t uglylen = strlen(ugly);
+                char md5png[uglylen + 1 + 32 + 4 + 1];
+                strcpy(md5png, ugly);
+                md5png[uglylen] = '/';
+                for (int j = 0; j < 16; j++) {
+                    sprintf(md5png+uglylen+1+(2*j), "%02x", md5[j]);
+                }
+                strcpy(md5png+uglylen+1+32, ".png");
+
+                work[i].uglypath = strdup(md5png);
             }
         }
         munmap((void*)g, glen);
@@ -181,6 +193,7 @@ int main(int argc, char** argv) {
         case 1: break;
         default: fprintf(stderr, "usage: %s [good] [bad] [ugly]\n", argv[0]); return 1;
     }
+    mkdir(ugly, 0777);
 
     ftw(good, find_work, NOPENFD);
 
@@ -196,11 +209,8 @@ int main(int argc, char** argv) {
             printf("%s:\n", state_name[state]);
             for (size_t i = 0; i < nwork; i++) {
                 if (work[i].state == state) {
-                    printf("\t%d\t0x%08x\t", work[i].diffs, work[i].max);
-                    for (int j = 0; j < 16; j++) {
-                        printf("%02x", work[i].md5[j]);
-                    }
-                    printf("\t%s\n", work[i].suffix);
+                    printf("\t%zu\t0x%08x\t%s\t%s\n",
+                            work[i].diffs, work[i].max, work[i].uglypath, work[i].suffix);
                 }
             }
         }
