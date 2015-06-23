@@ -19,7 +19,8 @@
 
 static const char *good = "good",
                   *bad  = "bad",
-                  *ugly = "ugly";
+                  *ugly = "ugly.html",
+                  *diff  = "/tmp";
 
 enum state { BYTE_EQ, PIXEL_EQ, MISSING, INCOMPARABLE, DIFF };
 static const char* state_name[] = {
@@ -35,8 +36,9 @@ static void free_bitmap(struct bitmap b) { free(b.pixels); }
 static size_t nwork = 0;
 static struct {
     const char* suffix;  // on heap, cleanup with free()
-    struct bitmap ugly;
-    const char* uglypath;
+    struct bitmap diff;
+
+    const char *gpath, *bpath, *dpath;
 
     size_t diffs;
     uint32_t max;
@@ -127,23 +129,23 @@ static struct bitmap diff_pngs(const uint8_t* gpng, size_t glen,
                                const uint8_t* bpng, size_t blen) {
     struct bitmap g = read_png(gpng, glen),
                   b  = read_png(bpng, blen),
-                  u = { NULL, 0, 0 };
+                  d = { NULL, 0, 0 };
 
     if (g.pixels && b.pixels && g.w == b.w && g.h == b.h) {
         size_t w = g.w, h = g.h;
-        u = (struct bitmap) { calloc(w*h, 4), w, h };
+        d = (struct bitmap) { calloc(w*h, 4), w, h };
         for (size_t j = 0; j < h; j++) {
         for (size_t i = 0; i < w; i++) {
             __m128i g4 = _mm_cvtsi32_si128((int)g.pixels[j*w+i]),
                     b4 = _mm_cvtsi32_si128((int)b.pixels[j*w+i]);
-            u.pixels[j*w+i] = (uint32_t)_mm_cvtsi128_si32(_mm_or_si128(_mm_subs_epu8(g4,b4),
+            d.pixels[j*w+i] = (uint32_t)_mm_cvtsi128_si32(_mm_or_si128(_mm_subs_epu8(g4,b4),
                                                                        _mm_subs_epu8(b4,g4)));
         }
         }
     }
     free_bitmap(g);
     free_bitmap(b);
-    return u;
+    return d;
 }
 
 static void do_work(void* ctx UNUSED, size_t i) {
@@ -152,6 +154,9 @@ static void do_work(void* ctx UNUSED, size_t i) {
          bpath[strlen(bad)  + len + 1];
     strcat(strcpy(gpath, good), work[i].suffix);
     strcat(strcpy(bpath,  bad), work[i].suffix);
+
+    work[i].gpath = strdup(gpath);
+    work[i].bpath = strdup(bpath);
 
     int gfd = open(gpath, O_RDONLY),
         bfd = open(bpath, O_RDONLY);
@@ -168,38 +173,38 @@ static void do_work(void* ctx UNUSED, size_t i) {
         if (glen == blen && 0 == memcmp(g, b, glen)) {
             work[i].state = BYTE_EQ;
         } else {
-            work[i].ugly = diff_pngs(g, glen, b, blen);
-            struct bitmap* u = &work[i].ugly;
+            work[i].diff = diff_pngs(g, glen, b, blen);
+            struct bitmap* d = &work[i].diff;
 
-            if (!u->pixels) {
+            if (!d->pixels) {
                 work[i].state = INCOMPARABLE;
             } else {
                 __m128i max = _mm_setzero_si128();
-                for (size_t p = 0; p < u->w*u->h; p++) {
-                    __m128i p4 = _mm_cvtsi32_si128((int)u->pixels[p]);
+                for (size_t p = 0; p < d->w*d->h; p++) {
+                    work[i].diffs += (d->pixels[p] != 0);
+                    __m128i p4 = _mm_cvtsi32_si128((int)d->pixels[p]);
                     max = _mm_max_epu8(max, p4);
                     p4 = _mm_cmpeq_epi8(p4, _mm_setzero_si128());
-                    u->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p4);
-                    work[i].diffs += (u->pixels[p] != 0);
+                    d->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p4);
                 }
                 work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
                 work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
 
                 uint8_t md5[16];
 
-                CC_MD5(u->pixels, (CC_LONG)(4*u->w*u->h), md5);
+                CC_MD5(d->pixels, (CC_LONG)(4*d->w*d->h), md5);
 
-                size_t uglylen = strlen(ugly);
-                char md5png[uglylen + 1 + 32 + 4 + 1];
-                strcpy(md5png, ugly);
-                md5png[uglylen] = '/';
+                size_t difflen = strlen(diff);
+                char md5png[difflen + 1 + 32 + 4 + 1];
+                strcpy(md5png, diff);
+                md5png[difflen] = '/';
                 for (int j = 0; j < 16; j++) {
-                    sprintf(md5png+uglylen+1+(2*j), "%02x", md5[j]);
+                    sprintf(md5png+difflen+1+(2*j), "%02x", md5[j]);
                 }
-                strcpy(md5png+uglylen+1+32, ".png");
+                strcpy(md5png+difflen+1+32, ".png");
 
-                work[i].uglypath = strdup(md5png);
-                dump_png(work[i].ugly, work[i].uglypath);
+                work[i].dpath = strdup(md5png);
+                dump_png(work[i].diff, work[i].dpath);
             }
         }
         munmap((void*)g, glen);
@@ -213,18 +218,25 @@ static void do_work(void* ctx UNUSED, size_t i) {
 
 int main(int argc, char** argv) {
     switch (argc) {
+        case 5: diff = argv[4];
         case 4: ugly = argv[3];
         case 3: bad  = argv[2];
         case 2: good = argv[1];
         case 1: break;
-        default: fprintf(stderr, "usage: %s [good] [bad] [ugly]\n", argv[0]); return 1;
+        default: fprintf(stderr, "usage: %s [good] [bad] [ugly] [diff]\n", argv[0]); return 1;
     }
-    mkdir(ugly, 0777);
+    mkdir(diff, 0777);
 
     ftw(good, find_work, NOPENFD);
 
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply_f(nwork, queue, NULL, do_work);
+
+    FILE* u = fopen(ugly, "w");
+    assert (u);
+    const char* style = "td { width:33% }\n"
+                        "img { max-width:100%; max-height: 320 }\n";
+    fprintf(u, "<html><style>%s</style><table>\n", style);
 
     for (int state = 0; state <= DIFF; state++) {
         int n = 0;
@@ -236,11 +248,22 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < nwork; i++) {
                 if (work[i].state == state) {
                     printf("\t%zu\t0x%08x\t%s\t%s\n",
-                            work[i].diffs, work[i].max, work[i].uglypath, work[i].suffix);
+                            work[i].diffs, work[i].max, work[i].dpath, work[i].suffix);
+                    fprintf(u, "<tr>\n"
+                               "  <td><div>%08x, %zu</div><a href=%s><img src=%s></a></td>\n"
+                               "  <td><a href=%s><div>%s</div><img src=%s></a></td>\n"
+                               "  <td><a href=%s><div>%s</div><img src=%s></a></td>\n"
+                               "</tr>\n",
+                               work[i].max,   work[i].diffs, work[i].dpath, work[i].dpath,
+                               work[i].gpath, work[i].gpath, work[i].gpath,
+                               work[i].bpath, work[i].bpath, work[i].bpath);
                 }
             }
         }
     }
+
+    fprintf(u, "</table></html>\n");
+    fclose(u);
 
     return 0;
 }
