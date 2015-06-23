@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <dispatch/dispatch.h>
 #include <ftw.h>
+#include <immintrin.h>
 #include <png.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,16 +18,26 @@ static const char *good = "good",
                   *bad  = "bad",
                   *ugly = "ugly";
 
-enum state { BYTE_EQ, PIXEL_EQ, MISSING, DIMENSION_DIFF, PIXEL_DIFF };
+enum state { BYTE_EQ, PIXEL_EQ, MISSING, INCOMPARABLE, DIFF };
 static const char* state_name[] = {
-    "byte-equal", "pixel-equal", "missing", "dimension-diff", "pixel-diff"
+    "byte-equal", "pixel-equal", "missing", "incomparable", "diff"
 };
+
+struct bitmap {
+    uint32_t* pixels;
+    size_t w,h;
+};
+static void free_bitmap(struct bitmap b) { free(b.pixels); }
 
 static size_t nwork = 0;
 static struct {
     const char* suffix;  // on heap, cleanup with free()
-    enum state state;
+    struct bitmap ugly;
     int diffs;
+    uint32_t max;
+    enum state state;
+
+    int padding;
 } work[MANY];
 
 static int find_work(const char* fpath, const struct stat* sb UNUSED, int typeflag) {
@@ -53,7 +64,7 @@ static void read_png_io(png_structp png, png_bytep data, png_size_t len) {
     io->len -= l;
 }
 
-static uint32_t* read_png(const uint8_t* buf, size_t len, size_t* x, size_t* y) {
+static struct bitmap read_png(const uint8_t* buf, size_t len) {
     png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     assert (png);
     png_infop info = png_create_info_struct(png);
@@ -61,7 +72,7 @@ static uint32_t* read_png(const uint8_t* buf, size_t len, size_t* x, size_t* y) 
 
     if (setjmp(png_jmpbuf(png))) {
         png_destroy_read_struct(&png, &info, NULL);
-        return NULL;
+        return (struct bitmap) { NULL, 0, 0 };
     }
 
     struct png_io io = { buf, len };
@@ -77,39 +88,35 @@ static uint32_t* read_png(const uint8_t* buf, size_t len, size_t* x, size_t* y) 
            h = png_get_image_height(png, info);
 
     uint32_t* pix = calloc(w*h, 4);
-    *x = w;
-    *y = h;
     for (size_t j = 0; j < h; j++) {
         memcpy(pix+(j*w), rows[j], w*4);
     }
 
     png_destroy_read_struct(&png, &info, NULL);
-    return pix;
+    return (struct bitmap) { pix, w, h };
 }
 
-static int diff_pngs(const uint8_t* gpng, size_t gpnglen,
-                     const uint8_t* bpng, size_t bpnglen) {
-    int diffs = 0;
-    size_t gx,gy, bx,by;
-    uint32_t *g = read_png(gpng, gpnglen, &gx, &gy),
-             *b = read_png(bpng, bpnglen, &bx, &by);
-    if (g && b) {
-        if (gx == bx && gy == by) {
-            size_t w = gx, h = gy;
-            for (size_t j = 0; j < h; j++) {
-            for (size_t i = 0; i < w; i++) {
-                if (g[j*w+i] != b[j*w+i]) {
-                    diffs++;
-                }
-            }
-            }
-        } else {
-            diffs = -1;
+static struct bitmap diff_pngs(const uint8_t* gpng, size_t glen,
+                               const uint8_t* bpng, size_t blen) {
+    struct bitmap g = read_png(gpng, glen),
+                  b  = read_png(bpng, blen),
+                  u = { NULL, 0, 0 };
+
+    if (g.pixels && b.pixels && g.w == b.w && g.h == b.h) {
+        size_t w = g.w, h = g.h;
+        u = (struct bitmap) { calloc(w*h, 4), w, h };
+        for (size_t j = 0; j < h; j++) {
+        for (size_t i = 0; i < w; i++) {
+            __m128i g4 = _mm_cvtsi32_si128((int)g.pixels[j*w+i]),
+                    b4 = _mm_cvtsi32_si128((int)b.pixels[j*w+i]);
+            u.pixels[j*w+i] = (uint32_t)_mm_cvtsi128_si32(_mm_or_si128(_mm_subs_epu8(g4,b4),
+                                                                       _mm_subs_epu8(b4,g4)));
+        }
         }
     }
-    free(g);
-    free(b);
-    return diffs;
+    free_bitmap(g);
+    free_bitmap(b);
+    return u;
 }
 
 static void do_work(void* ctx UNUSED, size_t i) {
@@ -134,13 +141,19 @@ static void do_work(void* ctx UNUSED, size_t i) {
         if (glen == blen && 0 == memcmp(g, b, glen)) {
             work[i].state = BYTE_EQ;
         } else {
-            int diffs = diff_pngs(g, glen, b, blen);
-            switch (diffs) {
-                case -1: work[i].state = DIMENSION_DIFF; break;
-                case  0: work[i].state = PIXEL_EQ;       break;
-                default: work[i].state = PIXEL_DIFF;     break;
+            struct bitmap u = diff_pngs(g, glen, b, blen);
+            work[i].ugly = u;
+            if (!u.pixels) {
+                work[i].state = INCOMPARABLE;
+            } else {
+                __m128i max = _mm_setzero_si128();
+                for (size_t p = 0; p < u.w*u.h; p++) {
+                    max = _mm_max_epu8(max, _mm_cvtsi32_si128((int)u.pixels[p]));
+                    work[i].diffs += (u.pixels[p] != 0);
+                }
+                work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
+                work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
             }
-            work[i].diffs = diffs;
         }
         munmap((void*)g, glen);
         munmap((void*)b, blen);
@@ -165,7 +178,7 @@ int main(int argc, char** argv) {
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply_f(nwork, queue, NULL, do_work);
 
-    for (int state = 0; state <= PIXEL_DIFF; state++) {
+    for (int state = 0; state <= DIFF; state++) {
         int n = 0;
         for (size_t i = 0; i < nwork; i++) {
             n += (work[i].state == state && work[i].diffs != 0);
@@ -174,7 +187,7 @@ int main(int argc, char** argv) {
             printf("%s:\n", state_name[state]);
             for (size_t i = 0; i < nwork; i++) {
                 if (work[i].state == state) {
-                    printf("\t%d\t%s\n", work[i].diffs, work[i].suffix);
+                    printf("\t%d\t0x%08x\t%s\n", work[i].diffs, work[i].max, work[i].suffix);
                 }
             }
         }
