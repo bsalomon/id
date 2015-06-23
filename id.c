@@ -101,6 +101,28 @@ static struct bitmap read_png(const uint8_t* buf, size_t len) {
     return (struct bitmap) { pix, w, h };
 }
 
+static void dump_png(struct bitmap bm, const char* path) {
+    FILE* f = fopen(path, "w");
+    assert(f);
+    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    assert(png);
+    png_infop info = png_create_info_struct(png);
+    assert(info);
+
+    png_init_io(png, f);
+    png_set_IHDR(png, info, (png_uint_32)bm.w, (png_uint_32)bm.h, 8, PNG_COLOR_TYPE_RGB_ALPHA,
+                 PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+    png_bytep rows[bm.h];
+    for (size_t j = 0; j < bm.h; j++) {
+        rows[j] = (png_bytep)(bm.pixels+j*bm.w);
+    }
+    png_set_rows(png, info, rows);
+    png_write_png(png, info, 0, NULL);
+    png_destroy_write_struct(&png, &info);
+    fclose(f);
+}
+
 static struct bitmap diff_pngs(const uint8_t* gpng, size_t glen,
                                const uint8_t* bpng, size_t blen) {
     struct bitmap g = read_png(gpng, glen),
@@ -154,7 +176,10 @@ static void do_work(void* ctx UNUSED, size_t i) {
             } else {
                 __m128i max = _mm_setzero_si128();
                 for (size_t p = 0; p < u->w*u->h; p++) {
-                    max = _mm_max_epu8(max, _mm_cvtsi32_si128((int)u->pixels[p]));
+                    __m128i p4 = _mm_cvtsi32_si128((int)u->pixels[p]);
+                    max = _mm_max_epu8(max, p4);
+                    p4 = _mm_cmpeq_epi8(p4, _mm_setzero_si128());
+                    u->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p4);
                     work[i].diffs += (u->pixels[p] != 0);
                 }
                 work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
@@ -174,6 +199,7 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 strcpy(md5png+uglylen+1+32, ".png");
 
                 work[i].uglypath = strdup(md5png);
+                dump_png(work[i].ugly, work[i].uglypath);
             }
         }
         munmap((void*)g, glen);
