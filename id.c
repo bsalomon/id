@@ -14,24 +14,21 @@ static const char *good = "good",
                   *ugly = "ugly";
 
 static size_t nwork = 0;
-static struct work {
-    const char* suffix;  // on heap, cleanup with free()
-} work[MANY];
+static const char* work[MANY];  // each pointer on heap, cleanup with free()
 
 static int find_work(const char* fpath, const struct stat* sb UNUSED, int typeflag) {
     if (typeflag == FTW_F) {
         const char* suffix = fpath + strlen(good);
         size_t len = strlen(suffix);
         if (len > 4 && 0 == strcmp(".png", suffix+len-4)) {
-            work[nwork].suffix = strdup(suffix);
-            nwork++;
+            work[nwork++] = strdup(suffix);
         }
     }
     return 0;
 }
 
-static void do_work(size_t i) {
-    printf("%s\n", work[i].suffix);
+static void do_work(void* ctx UNUSED, size_t i) {
+    printf("%s\n", work[i]);
 }
 
 int main(int argc, char** argv) {
@@ -46,7 +43,7 @@ int main(int argc, char** argv) {
     (void)ftw(good, find_work, NOPENFD);
 
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-    dispatch_apply(nwork, queue, ^(size_t i) { do_work(i); });
+    dispatch_apply_f(nwork, queue, NULL, do_work);
 
     return 0;
 }
