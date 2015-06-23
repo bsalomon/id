@@ -82,19 +82,21 @@ static struct bitmap read_png(const uint8_t* buf, size_t len) {
     struct png_io io = { buf, len };
     png_set_read_fn(png, &io, read_png_io);
 
-    png_read_png(png, info, PNG_TRANSFORM_EXPAND, NULL);
-    png_bytepp rows = png_get_rows(png, info);
-
-    assert (                       8 == png_get_bit_depth (png, info));
-    assert (PNG_COLOR_TYPE_RGB_ALPHA == png_get_color_type(png, info));
+    png_read_info(png, info);
+    // Force ARGB-8888.
+    png_set_strip_16(png);
+    png_set_expand(png);
+    png_set_add_alpha(png, 0xFF, PNG_FILLER_BEFORE);
+    png_read_update_info(png, info);
 
     size_t w = png_get_image_width (png, info),
            h = png_get_image_height(png, info);
-
     uint32_t* pix = calloc(w*h, 4);
+    png_bytep rows[h];
     for (size_t j = 0; j < h; j++) {
-        memcpy(pix+(j*w), rows[j], w*4);
+        rows[j] = (png_bytep)(pix+j*w);
     }
+    png_read_image(png, rows);
 
     png_destroy_read_struct(&png, &info, NULL);
     return (struct bitmap) { pix, w, h };
@@ -145,20 +147,21 @@ static void do_work(void* ctx UNUSED, size_t i) {
         if (glen == blen && 0 == memcmp(g, b, glen)) {
             work[i].state = BYTE_EQ;
         } else {
-            struct bitmap u = diff_pngs(g, glen, b, blen);
-            work[i].ugly = u;
-            if (!u.pixels) {
+            work[i].ugly = diff_pngs(g, glen, b, blen);
+            struct bitmap* u = &work[i].ugly;
+
+            if (!u->pixels) {
                 work[i].state = INCOMPARABLE;
             } else {
                 __m128i max = _mm_setzero_si128();
-                for (size_t p = 0; p < u.w*u.h; p++) {
-                    max = _mm_max_epu8(max, _mm_cvtsi32_si128((int)u.pixels[p]));
-                    work[i].diffs += (u.pixels[p] != 0);
+                for (size_t p = 0; p < u->w*u->h; p++) {
+                    max = _mm_max_epu8(max, _mm_cvtsi32_si128((int)u->pixels[p]));
+                    work[i].diffs += (u->pixels[p] != 0);
                 }
                 work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
                 work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
 
-                CC_MD5(u.pixels, (CC_LONG)(4*u.w*u.h), work[i].md5);
+                CC_MD5(u->pixels, (CC_LONG)(4*u->w*u->h), work[i].md5);
             }
         }
         munmap((void*)g, glen);
@@ -202,5 +205,6 @@ int main(int argc, char** argv) {
             }
         }
     }
+
     return 0;
 }
