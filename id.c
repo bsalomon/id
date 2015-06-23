@@ -1,15 +1,19 @@
 #include <assert.h>
+#include <fcntl.h>
 #include <ftw.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 #include <immintrin.h>
-
-#include <dispatch/dispatch.h>
 #include <png.h>
+
+#if defined(__BLOCKS__) && defined(__APPLE__)
+    #include <dispatch/dispatch.h>
+#endif
 
 #define UNUSED __attribute__((unused))
 
@@ -244,8 +248,12 @@ int main(int argc, char** argv) {
 
     ftw(good, find_work, NOPENFD);
 
+#if defined(__BLOCKS__) && defined(__APPLE__)
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply_f(nwork, queue, NULL, do_work);
+#else
+    for (size_t i = 0; i < nwork; i++) do_work(NULL, i);
+#endif
 
     FILE* u = fopen(ugly, "w");
     assert (u);
@@ -253,7 +261,7 @@ int main(int argc, char** argv) {
                         "img{max-width:100%; max-height:320}";
     fprintf(u, "<html><style>%s</style><table>", style);
 
-    for (int state = 0; state <= DIFF; state++) {
+    for (enum state state = 0; state <= DIFF; state++) {
         int n = 0;
         for (size_t i = 0; i < nwork; i++) {
             n += (work[i].state == state && work[i].diffs != 0);
