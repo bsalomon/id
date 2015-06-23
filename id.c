@@ -111,6 +111,9 @@ static void dump_png(struct bitmap bm, const char* path) {
     png_infop info = png_create_info_struct(png);
     assert(info);
 
+    png_set_compression_level(png, 1);
+    png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE);
+
     png_init_io(png, f);
     png_set_IHDR(png, info, (png_uint_32)bm.w, (png_uint_32)bm.h, 8, PNG_COLOR_TYPE_RGB_ALPHA,
                  PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
