@@ -249,9 +249,9 @@ int main(int argc, char** argv) {
 
     FILE* u = fopen(ugly, "w");
     assert (u);
-    const char* style = "table { table-layout: fixed; width: 100%}\n"
-                        "img { max-width:100%; max-height: 320 }\n";
-    fprintf(u, "<html><style>%s</style><table>\n", style);
+    const char* style = "table{table-layout:fixed; width:100%}"
+                        "img{max-width:100%; max-height:320}";
+    fprintf(u, "<html><style>%s</style><table>", style);
 
     for (int state = 0; state <= DIFF; state++) {
         int n = 0;
@@ -264,27 +264,22 @@ int main(int argc, char** argv) {
                 if (work[i].state == state) {
                     printf("\t%zu\t0x%08x\t%s\t%s\n",
                             work[i].diffs, work[i].max, work[i].dpath, work[i].suffix);
-                    fprintf(u, "<tr>\n"
-                               "  <th>%08x, %zu</th>\n"
-                               "  <th>%s</th>\n"
-                               "  <th>%s</th>\n"
-                               "</tr>\n"
-                               "<tr>\n"
-                               "  <td><a href=%s><img src=%s></a></td>\n"
-                               "  <td><a href=%s><img src=%s></a></td>\n"
-                               "  <td><a href=%s><img src=%s></a></td>\n"
-                               "</tr>\n",
+                    fprintf(u, "<tr>"
+                                 "<th>%08x, %zu"
+                                 "<th>%s"
+                                 "<th>%s"
+                               "<tr>"
+                                 "<td><a href=%s><img src=%s></a>"
+                                 "<td><a href=%s><img src=%s></a>"
+                                 "<td><a href=%s><img src=%s></a>",
                                work[i].max,   work[i].diffs, work[i].gpath, work[i].bpath,
                                work[i].dpath, work[i].dpath,
                                work[i].gpath, work[i].gpath,
                                work[i].bpath, work[i].bpath);
-
                 }
             }
         }
     }
-
-    fprintf(u, "</table></html>\n");
     fclose(u);
 
     return 0;
