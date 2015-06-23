@@ -3,13 +3,14 @@ builddir = out
 cc = clang -Weverything -Wno-vla -fcolor-diagnostics
 
 rule compile
-    command = $cc -Werror -O3 -march=native -fomit-frame-pointer -MD -MF $out.d $args -c $in -o $out
+    command = $cc -Werror -g -O3 -march=native -MD -MF $out.d $args -c $in -o $out
     depfile = $out.d
     deps    = gcc
 
 rule link
-    command = $cc $in -o $out
+    command = $cc $args $in -o $out
 
 build out/id.o: compile id.c
-    args = -I`brew --prefix || echo /usr`/include
+    args = -I`brew --prefix`/include
 build out/id: link out/id.o
+    args = -L`brew --prefix`/lib -lpng
