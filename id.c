@@ -8,7 +8,6 @@
 
 #include <immintrin.h>
 
-#include <CommonCrypto/CommonDigest.h>
 #include <dispatch/dispatch.h>
 #include <png.h>
 
@@ -151,6 +150,27 @@ static struct bitmap diff_pngs(const uint8_t* gpng, size_t glen,
     return d;
 }
 
+static uint32_t hash(const uint32_t* p, size_t len) {
+    uint32_t h = 0;
+    for (size_t i = 0; i < len; i++) {
+        uint32_t k = p[i];
+        k *= 0xcc9e2d51;
+        k = (k << 15) | (k >> 17);
+        k *= 0x1b873593;
+        h ^= k;
+        h = (h << 13) | (h >> 19);
+        h *= 5;
+        h += 0xe6546b64;
+    }
+    h ^= len;
+    h ^= h >> 16;
+    h *= 0x85ebca6b;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >> 16;
+    return h;
+}
+
 static void do_work(void* ctx UNUSED, size_t i) {
     size_t len = strlen(work[i].suffix);
     char gpath[strlen(good) + len + 1],
@@ -193,20 +213,12 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
                 work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
 
-                uint8_t md5[16];
+                uint32_t h = hash(d->pixels, d->w*d->h);
 
-                CC_MD5(d->pixels, (CC_LONG)(4*d->w*d->h), md5);
+                char hashpng[strlen(diff) + 1 + 8 + 4 + 1];
+                sprintf(hashpng, "%s/%08x.png", diff, h);
 
-                size_t difflen = strlen(diff);
-                char md5png[difflen + 1 + 32 + 4 + 1];
-                strcpy(md5png, diff);
-                md5png[difflen] = '/';
-                for (int j = 0; j < 16; j++) {
-                    sprintf(md5png+difflen+1+(2*j), "%02x", md5[j]);
-                }
-                strcpy(md5png+difflen+1+32, ".png");
-
-                work[i].dpath = strdup(md5png);
+                work[i].dpath = strdup(hashpng);
                 dump_png(work[i].diff, work[i].dpath);
             }
         }
