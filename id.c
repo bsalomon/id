@@ -3,15 +3,14 @@
 #include <png.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
 
 #define UNUSED __attribute__((unused))
 
 #define MANY 1024*1024
 #define NOPENFD 100
 
-static const char *good = "good",
-                  *bad  = "bad",
-                  *ugly = "ugly";
+static const char *good = "good", *bad  = "bad", *ugly = "ugly";
 
 static size_t nwork = 0;
 static const char* work[MANY];  // each pointer on heap, cleanup with free()
@@ -28,7 +27,33 @@ static int find_work(const char* fpath, const struct stat* sb UNUSED, int typefl
 }
 
 static void do_work(void* ctx UNUSED, size_t i) {
-    printf("%s\n", work[i]);
+    size_t len = strlen(work[i]);
+    char gpath[strlen(good) + len + 1],
+         bpath[strlen(bad)  + len + 1];
+    strcat(strcpy(gpath, good), work[i]);
+    strcat(strcpy(bpath,  bad), work[i]);
+
+    int gfd = open(gpath, O_RDONLY),
+        bfd = open(bpath, O_RDONLY);
+    if (gfd >= 0 && bfd >= 0) {
+        struct stat st;
+        fstat(gfd, &st);
+        size_t glen = (size_t)st.st_size;
+        fstat(bfd, &st);
+        size_t blen = (size_t)st.st_size;
+
+        const char *g = mmap(0, glen, PROT_READ, MAP_FILE|MAP_PRIVATE, gfd, 0),
+                   *b = mmap(0, blen, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
+        if (g != MAP_FAILED && b != MAP_FAILED) {
+            if (glen != blen || 0 != memcmp(g, b, glen)) {
+                printf("%s %zu %zu\n", work[i], glen, blen);
+            }
+        }
+        if (g != MAP_FAILED) munmap((void*)g, glen);
+        if (b != MAP_FAILED) munmap((void*)b, blen);
+    }
+    if (gfd >= 0) close(gfd);
+    if (bfd >= 0) close(bfd);
 }
 
 int main(int argc, char** argv) {

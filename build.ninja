@@ -1,6 +1,6 @@
 builddir = out
 
-cc = clang -Weverything -fcolor-diagnostics
+cc = clang -Weverything -Wno-vla -fcolor-diagnostics
 
 rule compile
     command = $cc -Werror -O3 -march=native -fomit-frame-pointer -MD -MF $out.d $args -c $in -o $out
