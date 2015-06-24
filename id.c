@@ -251,6 +251,9 @@ int main(int argc, char** argv) {
 #if defined(__BLOCKS__) && defined(__APPLE__)
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply_f(nwork, queue, NULL, do_work);
+#elif defined(_OPENMP)
+    #pragma omp parallel for
+    for (size_t i = 0; i < nwork; i++) do_work(NULL, i);
 #else
     for (size_t i = 0; i < nwork; i++) do_work(NULL, i);
 #endif
