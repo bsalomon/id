@@ -297,17 +297,18 @@ int main(int argc, char** argv) {
             printf("%s:\n", state_name[state]);
             for (size_t i = 0; i < nwork; i++) {
                 if (work[i].state == state) {
-                    printf("\t%zu\t0x%08x\t%s\t%s\n",
-                            work[i].diffs, work[i].max, work[i].dpath, work[i].suffix);
+                    double diffpercent = 100.0 * work[i].diffs / work[i].diff.w / work[i].diff.h;
+                    printf("\t%.2f%%\t%08x\t%s\t%s\n",
+                            diffpercent, work[i].max, work[i].dpath, work[i].suffix);
                     fprintf(u, "<tr>"
-                                 "<th>%08x, %zu"
+                                 "<th>%.2f%% %08x"
                                  "<th>%s"
                                  "<th>%s"
                                "<tr>"
                                  "<td><a href=%s><img src=%s></a>"
                                  "<td><a href=%s><img src=%s></a>"
                                  "<td><a href=%s><img src=%s></a>",
-                               work[i].max,   work[i].diffs, work[i].gpath, work[i].bpath,
+                               diffpercent, work[i].max, work[i].gpath, work[i].bpath,
                                work[i].dpath, work[i].dpath,
                                work[i].gpath, work[i].gpath,
                                work[i].bpath, work[i].bpath);
