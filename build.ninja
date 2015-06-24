@@ -10,7 +10,7 @@ rule compile
 rule link
     command = $cc $args $in -o $out
 
-build out/id.o: compile id.c
+build out/idiff.o: compile idiff.c
     args = -I`brew --prefix`/include
-build out/id: link out/id.o
+build out/idiff: link out/idiff.o
     args = -L`brew --prefix`/lib -lpng
