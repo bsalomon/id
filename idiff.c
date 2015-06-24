@@ -188,7 +188,7 @@ static void do_work(void* ctx UNUSED, size_t i) {
                             _mm_add_epi32(_mm_set1_epi32(1),
                                           _mm_cmpeq_epi32(p4, _mm_setzero_si128())));
                     max = _mm_max_epu8(max, p4);
-                    p4 = _mm_cmpeq_epi8(p4, _mm_setzero_si128());
+                    p4 = _mm_xor_si128(p4, _mm_set1_epi32((int)0xff000000));
                     _mm_store_si128((__m128i*)(d->pixels+p), p4);
                 }
                 for (; p < d->w*d->h; p++) {
@@ -197,7 +197,7 @@ static void do_work(void* ctx UNUSED, size_t i) {
                             _mm_add_epi32(_mm_set1_epi32(1),
                                           _mm_cmpeq_epi32(p1, _mm_setzero_si128())));
                     max = _mm_max_epu8(max, p1);
-                    p1 = _mm_cmpeq_epi8(p1, _mm_setzero_si128());
+                    p1 = _mm_xor_si128(p1, _mm_set1_epi32((int)0xff000000));
                     d->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p1);
                 }
                 diffs = _mm_add_epi32(diffs, _mm_srli_si128(diffs, 8));
