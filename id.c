@@ -24,7 +24,7 @@ static const char *good = "good",
                   *bad  = "bad",
                   *ugly = "ugly.html",
                   *diff  = "/tmp";
-static size_t glen, blen;
+static size_t glen, blen, dlen;
 
 struct bitmap {
     uint32_t* pixels;
@@ -210,7 +210,7 @@ static void do_work(void* ctx UNUSED, size_t i) {
 
                 uint32_t h = hash(d->pixels, d->w*d->h);
 
-                char hashpng[strlen(diff) + 1 + 8 + 4 + 1];
+                char hashpng[dlen + 1 + 8 + 4 + 1];
                 sprintf(hashpng, "%s/%08x.png", diff, h);
 
                 work[i].dpath = strdup(hashpng);
@@ -237,6 +237,7 @@ int main(int argc, char** argv) {
 
     glen = strlen(good);
     blen = strlen(bad);
+    dlen = strlen(diff);
 
     ftw(good, find_work, NOPENFD);
 
