@@ -26,11 +26,6 @@ static const char *good = "good",
                   *diff  = "/tmp";
 static size_t glen, blen;
 
-enum state { BYTE_EQ, PIXEL_EQ, MISSING, INCOMPARABLE, DIFF };
-static const char* state_name[] = {
-    "byte-equal", "pixel-equal", "missing", "incomparable", "diff"
-};
-
 struct bitmap {
     uint32_t* pixels;
     size_t w,h;
@@ -42,9 +37,8 @@ static struct {
     char *gpath, *bpath, *dpath;  // on heap, clean up with free()
     struct bitmap diff;
 
-    size_t diffs;
+    int diffs;
     uint32_t max;
-    enum state state;
 } work[MANY];
 
 static int find_work(const char* fpath, const struct stat* sb UNUSED, int type) {
@@ -194,15 +188,11 @@ static void do_work(void* ctx UNUSED, size_t i) {
         const uint8_t *g = mmap(0, gsize, PROT_READ, MAP_FILE|MAP_PRIVATE, gfd, 0),
                       *b = mmap(0, bsize, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
         assert (g != MAP_FAILED && b != MAP_FAILED);
-        if (gsize == bsize && 0 == memcmp(g, b, gsize)) {
-            work[i].state = BYTE_EQ;
-        } else {
+        if (gsize != bsize || 0 != memcmp(g, b, gsize)) {
             work[i].diff = diff_pngs(g, gsize, b, bsize);
             struct bitmap* d = &work[i].diff;
 
-            if (!d->pixels) {
-                work[i].state = INCOMPARABLE;
-            } else {
+            if (d->pixels) {
                 __m128i max = _mm_setzero_si128();
                 __m128i diffs = _mm_setzero_si128();
                 size_t p = 0;
@@ -229,9 +219,8 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 max = _mm_max_epu8(max, _mm_srli_si128(max, 8));
                 max = _mm_max_epu8(max, _mm_srli_si128(max, 4));
 
-                work[i].diffs = (uint32_t)_mm_cvtsi128_si32(diffs);
+                work[i].diffs =           _mm_cvtsi128_si32(diffs);
                 work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
-                work[i].state = work[i].diffs ? DIFF : PIXEL_EQ;
 
                 uint32_t h = hash(d->pixels, d->w*d->h);
 
@@ -244,8 +233,6 @@ static void do_work(void* ctx UNUSED, size_t i) {
         }
         munmap((void*)g, gsize);
         munmap((void*)b, bsize);
-    } else {
-        work[i].state = MISSING;
     }
     if (gfd >= 0) close(gfd);
     if (bfd >= 0) close(bfd);
@@ -280,8 +267,8 @@ int main(int argc, char** argv) {
     FILE* u = fopen(ugly, "w");
     assert (u);
     const char* style =
-        "body { background-size: 24px 24px; "
-        "       background-color: rgb(170,190,210); "
+        "body { background-size: 16px 16px; "
+        "       background-color: rgb(230,230,230); "
         "       background-image: "
         "   linear-gradient(45deg, rgba(255,255,255,.2) 25%, transparent 25%, transparent 50%, "
         "   rgba(255,255,255,.2) 50%, rgba(255,255,255,.2) 75%, transparent 75%, transparent) "
@@ -290,35 +277,26 @@ int main(int argc, char** argv) {
         "img {max-width:100%; max-height:320 }";
     fprintf(u, "<html><style>%s</style><table>", style);
 
-    for (enum state state = 0; state <= DIFF; state++) {
-        int n = 0;
-        for (size_t i = 0; i < nwork; i++) {
-            n += (work[i].state == state && work[i].diffs != 0);
+    for (size_t i = 0; i < nwork; i++) {
+        if (!work[i].diffs) {
+            continue;
         }
-        if (n > 0) {
-            printf("%s:\n", state_name[state]);
-            for (size_t i = 0; i < nwork; i++) {
-                if (work[i].state == state) {
-                    double diffpercent = 100.0 * work[i].diffs / work[i].diff.w / work[i].diff.h;
-                    printf("\t%.2f%%\t%08x\t%s\t%s\n",
-                            diffpercent, work[i].max, work[i].dpath, work[i].bpath);
-                    fprintf(u, "<tr>"
-                                 "<th>%.2f%% %08x"
-                                 "<th>%s"
-                                 "<th>%s"
-                               "<tr>"
-                                 "<td><a href=%s><img src=%s></a>"
-                                 "<td><a href=%s><img src=%s></a>"
-                                 "<td><a href=%s><img src=%s></a>",
-                               diffpercent, work[i].max, work[i].gpath, work[i].bpath,
-                               work[i].dpath, work[i].dpath,
-                               work[i].gpath, work[i].gpath,
-                               work[i].bpath, work[i].bpath);
-                }
-            }
-        }
+        double diffpercent = 100.0 * work[i].diffs / work[i].diff.w / work[i].diff.h;
+        printf("%.2f%% %08x %s\n%s\n%s\n\n",
+                diffpercent, work[i].max, work[i].dpath, work[i].gpath, work[i].bpath);
+        fprintf(u, "<tr><th>%.2f%% %08x"
+                       "<th>%s"
+                       "<th>%s"
+                   "<tr><td><a href=%s><img src=%s></a>"
+                       "<td><a href=%s><img src=%s></a>"
+                       "<td><a href=%s><img src=%s></a>",
+                diffpercent, work[i].max, work[i].gpath, work[i].bpath,
+                work[i].dpath, work[i].dpath,
+                work[i].gpath, work[i].gpath,
+                work[i].bpath, work[i].bpath);
     }
     fclose(u);
+    printf("%s\n", ugly);
 
     return 0;
 }
