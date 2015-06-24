@@ -30,7 +30,6 @@ struct bitmap {
     uint32_t* pixels;
     size_t w,h;
 };
-static void free_bitmap(struct bitmap b) { _mm_free(b.pixels); }
 
 static size_t nwork = 0;
 static struct {
@@ -149,8 +148,8 @@ static struct bitmap diff_pngs(const uint8_t* gpng, size_t gsize,
                                                                    _mm_subs_epu8(b1,g1)));
         }
     }
-    free_bitmap(g);
-    free_bitmap(b);
+    _mm_free(g.pixels);
+    _mm_free(b.pixels);
     return d;
 }
 
