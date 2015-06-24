@@ -33,8 +33,8 @@ struct bitmap {
 
 static size_t nwork = 0;
 static struct {
-    char *gpath, *bpath, *dpath;  // on heap, clean up with free()
-    struct bitmap diff;
+    char *gpath, *bpath, *dpathA, *dpathB;  // on heap, clean up with free()
+    struct bitmap diffA, diffB;
 
     int diffs;
     uint32_t max;
@@ -175,8 +175,10 @@ static void do_work(void* ctx UNUSED, size_t i) {
                       *b = mmap(0, bsize, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
         assert (g != MAP_FAILED && b != MAP_FAILED);
         if (gsize != bsize || 0 != memcmp(g, b, gsize)) {
-            work[i].diff = diff_pngs(g, gsize, b, bsize);
-            struct bitmap* d = &work[i].diff;
+            work[i].diffA = diff_pngs(g, gsize, b, bsize);
+            struct bitmap* d = &work[i].diffA;
+            work[i].diffB = (struct bitmap) { _mm_malloc(4*d->w*d->h, 16), d->w, d->h };
+            struct bitmap* dB = &work[i].diffB;
 
             if (d->pixels) {
                 __m128i max = _mm_setzero_si128();
@@ -188,8 +190,10 @@ static void do_work(void* ctx UNUSED, size_t i) {
                             _mm_add_epi32(_mm_set1_epi32(1),
                                           _mm_cmpeq_epi32(p4, _mm_setzero_si128())));
                     max = _mm_max_epu8(max, p4);
+                    __m128i p4b = _mm_cmpeq_epi8(p4, _mm_setzero_si128());
                     p4 = _mm_xor_si128(p4, _mm_set1_epi32((int)0xff000000));
                     _mm_store_si128((__m128i*)(d->pixels+p), p4);
+                    _mm_store_si128((__m128i*)(dB->pixels+p), p4b);
                 }
                 for (; p < d->w*d->h; p++) {
                     __m128i p1 = _mm_cvtsi32_si128((int)d->pixels[p]);
@@ -197,8 +201,10 @@ static void do_work(void* ctx UNUSED, size_t i) {
                             _mm_add_epi32(_mm_set1_epi32(1),
                                           _mm_cmpeq_epi32(p1, _mm_setzero_si128())));
                     max = _mm_max_epu8(max, p1);
+                    __m128i p1b = _mm_cmpeq_epi8(p1, _mm_setzero_si128());
                     p1 = _mm_xor_si128(p1, _mm_set1_epi32((int)0xff000000));
                     d->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p1);
+                    dB->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p1b);
                 }
                 diffs = _mm_add_epi32(diffs, _mm_srli_si128(diffs, 8));
                 diffs = _mm_add_epi32(diffs, _mm_srli_si128(diffs, 4));
@@ -213,9 +219,16 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 char hashpng[dlen + 1 + 8 + 4 + 1];
                 sprintf(hashpng, "%s/%08x.png", diff, h);
 
-                work[i].dpath = strdup(hashpng);
+                work[i].dpathA = strdup(hashpng);
                 if (0 != stat(hashpng, &st)) {
-                    dump_png(work[i].diff, work[i].dpath);
+                    dump_png(work[i].diffA, work[i].dpathA);
+                }
+
+                h = hash(dB->pixels, d->w*d->h);
+                sprintf(hashpng, "%s/%08x.png", diff, h);
+                work[i].dpathB = strdup(hashpng);
+                if (0 != stat(hashpng, &st)) {
+                    dump_png(work[i].diffB, work[i].dpathB);
                 }
             }
         }
@@ -270,17 +283,20 @@ int main(int argc, char** argv) {
         if (!work[i].diffs) {
             continue;
         }
-        double diffpercent = 100.0 * work[i].diffs / work[i].diff.w / work[i].diff.h;
-        printf("%.2f%% %08x %s\n%s\n%s\n\n",
-                diffpercent, work[i].max, work[i].dpath, work[i].gpath, work[i].bpath);
-        fprintf(u, "<tr><th>%.2f%% %08x"
+        double diffpercent = 100.0 * work[i].diffs / work[i].diffA.w / work[i].diffA.h;
+        printf("%.2f%% %08x %s %s\n",
+                diffpercent, work[i].max, work[i].dpathB, work[i].dpathA);
+        fprintf(u, "<tr><th>%.2f%%"
+                       "<th>%08x"
                        "<th>%s"
                        "<th>%s"
                    "<tr><td><a href=%s><img src=%s></a>"
                        "<td><a href=%s><img src=%s></a>"
+                       "<td><a href=%s><img src=%s></a>"
                        "<td><a href=%s><img src=%s></a>",
                 diffpercent, work[i].max, work[i].gpath, work[i].bpath,
-                work[i].dpath, work[i].dpath,
+                work[i].dpathB, work[i].dpathB,
+                work[i].dpathA, work[i].dpathA,
                 work[i].gpath, work[i].gpath,
                 work[i].bpath, work[i].bpath);
     }
