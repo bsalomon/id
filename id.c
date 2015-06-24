@@ -284,8 +284,15 @@ int main(int argc, char** argv) {
 
     FILE* u = fopen(ugly, "w");
     assert (u);
-    const char* style = "table{table-layout:fixed; width:100%}"
-                        "img{max-width:100%; max-height:320}";
+    const char* style =
+        "body { background-size: 24px 24px; "
+        "       background-color: rgb(170,190,210); "
+        "       background-image: "
+        "   linear-gradient(45deg, rgba(255,255,255,.2) 25%, transparent 25%, transparent 50%, "
+        "   rgba(255,255,255,.2) 50%, rgba(255,255,255,.2) 75%, transparent 75%, transparent) "
+        "}"
+        "table { table-layout:fixed; width:100% }"
+        "img {max-width:100%; max-height:320 }";
     fprintf(u, "<html><style>%s</style><table>", style);
 
     for (enum state state = 0; state <= DIFF; state++) {
