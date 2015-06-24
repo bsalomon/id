@@ -156,21 +156,8 @@ static struct bitmap diff_pngs(const uint8_t* gpng, size_t gsize,
 static uint32_t hash(const uint32_t* p, size_t len) {
     uint32_t h = 0;
     for (size_t i = 0; i < len; i++) {
-        uint32_t k = p[i];
-        k *= 0xcc9e2d51;
-        k = (k << 15) | (k >> 17);
-        k *= 0x1b873593;
-        h ^= k;
-        h = (h << 13) | (h >> 19);
-        h *= 5;
-        h += 0xe6546b64;
+        h = _mm_crc32_u32(h, p[i]);
     }
-    h ^= len;
-    h ^= h >> 16;
-    h *= 0x85ebca6b;
-    h ^= h >> 13;
-    h *= 0xc2b2ae35;
-    h ^= h >> 16;
     return h;
 }
 
