@@ -214,7 +214,9 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 sprintf(hashpng, "%s/%08x.png", diff, h);
 
                 work[i].dpath = strdup(hashpng);
-                dump_png(work[i].diff, work[i].dpath);
+                if (0 != stat(hashpng, &st)) {
+                    dump_png(work[i].diff, work[i].dpath);
+                }
             }
         }
         munmap((void*)g, gsize);
