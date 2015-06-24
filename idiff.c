@@ -284,9 +284,9 @@ int main(int argc, char** argv) {
             continue;
         }
         double diffpercent = 100.0 * work[i].diffs / work[i].diffA.w / work[i].diffA.h;
-        printf("%.2f%% %08x %s %s\n",
+        printf("%5.2f%% %08x %s %s\n",
                 diffpercent, work[i].max, work[i].dpathB, work[i].dpathA);
-        fprintf(u, "<tr><th>%.2f%%"
+        fprintf(u, "<tr><th>%5.2f%%"
                        "<th>%08x"
                        "<th>%s"
                        "<th>%s"
