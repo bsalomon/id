@@ -24,6 +24,7 @@ static const char *good = "good",
                   *bad  = "bad",
                   *ugly = "ugly.html",
                   *diff  = "/tmp";
+static size_t glen, blen;
 
 enum state { BYTE_EQ, PIXEL_EQ, MISSING, INCOMPARABLE, DIFF };
 static const char* state_name[] = {
@@ -38,22 +39,22 @@ static void free_bitmap(struct bitmap b) { _mm_free(b.pixels); }
 
 static size_t nwork = 0;
 static struct {
-    const char* suffix;  // on heap, cleanup with free()
+    char *gpath, *bpath, *dpath;  // on heap, clean up with free()
     struct bitmap diff;
-
-    const char *gpath, *bpath, *dpath;
 
     size_t diffs;
     uint32_t max;
     enum state state;
 } work[MANY];
 
-static int find_work(const char* fpath, const struct stat* sb UNUSED, int typeflag) {
-    if (typeflag == FTW_F) {
-        const char* suffix = fpath + strlen(good);
-        size_t len = strlen(suffix);
-        if (len > 4 && 0 == strcmp(".png", suffix+len-4)) {
-            work[nwork++].suffix = strdup(suffix);
+static int find_work(const char* fpath, const struct stat* sb UNUSED, int type) {
+    if (type == FTW_F) {
+        size_t len = strlen(fpath);
+        if (len > 4 && 0 == strcmp(".png", fpath+len-4)) {
+            work[nwork].gpath = strdup(fpath);
+            work[nwork].bpath = malloc(len + blen - glen + 1);
+            strcat(strcpy(work[nwork].bpath, bad), fpath+glen);
+            nwork++;
         }
     }
     return 0;
@@ -131,10 +132,10 @@ static void dump_png(struct bitmap bm, const char* path) {
     fclose(f);
 }
 
-static struct bitmap diff_pngs(const uint8_t* gpng, size_t glen,
-                               const uint8_t* bpng, size_t blen) {
-    struct bitmap g = read_png(gpng, glen),
-                  b = read_png(bpng, blen),
+static struct bitmap diff_pngs(const uint8_t* gpng, size_t gsize,
+                               const uint8_t* bpng, size_t bsize) {
+    struct bitmap g = read_png(gpng, gsize),
+                  b = read_png(bpng, bsize),
                   d = { NULL, 0, 0 };
 
     if (g.pixels && b.pixels && g.w == b.w && g.h == b.h) {
@@ -181,31 +182,22 @@ static uint32_t hash(const uint32_t* p, size_t len) {
 }
 
 static void do_work(void* ctx UNUSED, size_t i) {
-    size_t len = strlen(work[i].suffix);
-    char gpath[strlen(good) + len + 1],
-         bpath[strlen(bad)  + len + 1];
-    strcat(strcpy(gpath, good), work[i].suffix);
-    strcat(strcpy(bpath,  bad), work[i].suffix);
-
-    work[i].gpath = strdup(gpath);
-    work[i].bpath = strdup(bpath);
-
-    int gfd = open(gpath, O_RDONLY),
-        bfd = open(bpath, O_RDONLY);
+    int gfd = open(work[i].gpath, O_RDONLY),
+        bfd = open(work[i].bpath, O_RDONLY);
     if (gfd >= 0 || bfd >= 0) {
         struct stat st;
         fstat(gfd, &st);
-        size_t glen = (size_t)st.st_size;
+        size_t gsize = (size_t)st.st_size;
         fstat(bfd, &st);
-        size_t blen = (size_t)st.st_size;
+        size_t bsize = (size_t)st.st_size;
 
-        const uint8_t *g = mmap(0, glen, PROT_READ, MAP_FILE|MAP_PRIVATE, gfd, 0),
-                      *b = mmap(0, blen, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
+        const uint8_t *g = mmap(0, gsize, PROT_READ, MAP_FILE|MAP_PRIVATE, gfd, 0),
+                      *b = mmap(0, bsize, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
         assert (g != MAP_FAILED && b != MAP_FAILED);
-        if (glen == blen && 0 == memcmp(g, b, glen)) {
+        if (gsize == bsize && 0 == memcmp(g, b, gsize)) {
             work[i].state = BYTE_EQ;
         } else {
-            work[i].diff = diff_pngs(g, glen, b, blen);
+            work[i].diff = diff_pngs(g, gsize, b, bsize);
             struct bitmap* d = &work[i].diff;
 
             if (!d->pixels) {
@@ -250,8 +242,8 @@ static void do_work(void* ctx UNUSED, size_t i) {
                 dump_png(work[i].diff, work[i].dpath);
             }
         }
-        munmap((void*)g, glen);
-        munmap((void*)b, blen);
+        munmap((void*)g, gsize);
+        munmap((void*)b, bsize);
     } else {
         work[i].state = MISSING;
     }
@@ -269,6 +261,9 @@ int main(int argc, char** argv) {
         default: fprintf(stderr, "usage: %s [good] [bad] [ugly] [diff]\n", argv[0]); return 1;
     }
     mkdir(diff, 0777);
+
+    glen = strlen(good);
+    blen = strlen(bad);
 
     ftw(good, find_work, NOPENFD);
 
@@ -306,7 +301,7 @@ int main(int argc, char** argv) {
                 if (work[i].state == state) {
                     double diffpercent = 100.0 * work[i].diffs / work[i].diff.w / work[i].diff.h;
                     printf("\t%.2f%%\t%08x\t%s\t%s\n",
-                            diffpercent, work[i].max, work[i].dpath, work[i].suffix);
+                            diffpercent, work[i].max, work[i].dpath, work[i].bpath);
                     fprintf(u, "<tr>"
                                  "<th>%.2f%% %08x"
                                  "<th>%s"
