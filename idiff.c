@@ -26,11 +26,6 @@ static const char *good = "good",
                   *diff  = "/tmp";
 static size_t glen, blen, dlen;
 
-struct bitmap {
-    uint32_t* pixels;
-    size_t w,h;
-};
-
 static size_t nwork = 0;
 static struct {
     char *gpath, *bpath, *dpathA, *dpathB;  // on heap, clean up with free()
@@ -65,6 +60,11 @@ static void read_png_io(png_structp png, png_bytep data, png_size_t len) {
     io->buf += l;
     io->len -= l;
 }
+
+struct bitmap {
+    uint32_t* pixels;
+    size_t w,h;
+};
 
 static struct bitmap read_png(const uint8_t* buf, size_t len) {
     png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
