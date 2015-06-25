@@ -310,5 +310,12 @@ int main(int argc, char** argv) {
     fclose(u);
     printf("%s\n", ugly);
 
+    for (size_t i = 0; i < nwork; i++) {
+        free(work[i].gpath);
+        free(work[i].bpath);
+        free(work[i].dpathA);
+        free(work[i].dpathB);
+    }
+
     return 0;
 }
