@@ -34,10 +34,10 @@ struct bitmap {
 static size_t nwork = 0;
 static struct {
     char *gpath, *bpath, *dpathA, *dpathB;  // on heap, clean up with free()
-    struct bitmap diffA, diffB;
-
-    int diffs;
+    size_t pixels, diffs;
     uint32_t max;
+
+    int padding;
 } work[MANY];
 
 static int find_work(const char* fpath, const struct stat* sb UNUSED, int type) {
@@ -125,38 +125,41 @@ static void dump_png(struct bitmap bm, const char* path) {
     fclose(f);
 }
 
-static struct bitmap diff_pngs(const uint8_t* gpng, size_t gsize,
-                               const uint8_t* bpng, size_t bsize) {
+static void diff_pngs(const uint8_t* gpng, size_t gsize, const uint8_t* bpng, size_t bsize,
+                      struct bitmap* dA, struct bitmap* dB) {
     struct bitmap g = read_png(gpng, gsize),
-                  b = read_png(bpng, bsize),
-                  d = { NULL, 0, 0 };
-
-    if (g.pixels && b.pixels && g.w == b.w && g.h == b.h) {
-        size_t w = g.w, h = g.h;
-        d = (struct bitmap) { _mm_malloc(w*h*4, 16), w, h };
-        size_t p = 0;
-        for (; p < w*h/4*4; p += 4) {
-            __m128i g4 = _mm_load_si128((const __m128i*)(g.pixels+p)),
-                    b4 = _mm_load_si128((const __m128i*)(b.pixels+p));
-            _mm_store_si128((__m128i*)(d.pixels+p), _mm_or_si128(_mm_subs_epu8(g4,b4),
-                                                                 _mm_subs_epu8(b4,g4)));
-        }
-        for (; p < w*h; p++) {
-            __m128i g1 = _mm_cvtsi32_si128((int)g.pixels[p]),
-                    b1 = _mm_cvtsi32_si128((int)b.pixels[p]);
-            d.pixels[p] = (uint32_t)_mm_cvtsi128_si32(_mm_or_si128(_mm_subs_epu8(g1,b1),
-                                                                   _mm_subs_epu8(b1,g1)));
-        }
+                  b = read_png(bpng, bsize);
+    if (!g.pixels || !b.pixels || g.w != b.w || g.h != b.h) {
+        _mm_free(g.pixels);
+        _mm_free(b.pixels);
+        *dA = (struct bitmap) { NULL, 0, 0 };
+        *dB = (struct bitmap) { NULL, 0, 0 };
+        return;
     }
-    _mm_free(g.pixels);
-    _mm_free(b.pixels);
-    return d;
+
+    size_t p = 0, n = g.w*g.h;
+    for (; p < n/4*4; p += 4) {
+        __m128i g4 = _mm_load_si128((const __m128i*)(g.pixels+p)),
+                b4 = _mm_load_si128((const __m128i*)(b.pixels+p)),
+                d4 = _mm_or_si128(_mm_subs_epu8(g4,b4), _mm_subs_epu8(b4,g4));
+        _mm_store_si128((__m128i*)(g.pixels+p), d4);
+        //_mm_store_si128((__m128i*)(b.pixels+p), d4);
+    }
+    for (; p < n; p++) {
+        __m128i g1 = _mm_cvtsi32_si128((int)g.pixels[p]),
+                b1 = _mm_cvtsi32_si128((int)b.pixels[p]),
+                d1 = _mm_or_si128(_mm_subs_epu8(g1,b1), _mm_subs_epu8(b1,g1));
+        g.pixels[p] = (uint32_t)_mm_cvtsi128_si32(d1);
+        //b.pixels[p] = (uint32_t)_mm_cvtsi128_si32(d1);
+    }
+    *dA = g;
+    *dB = b;
 }
 
-static uint32_t hash(const uint32_t* p, size_t len) {
+static uint32_t hash(const uint32_t* pix, size_t n) {
     uint32_t h = 0;
-    for (size_t i = 0; i < len; i++) {
-        h = _mm_crc32_u32(h, p[i]);
+    for (size_t p = 0; p < n; p++) {
+        h = _mm_crc32_u32(h, pix[p]);
     }
     return h;
 }
@@ -175,62 +178,66 @@ static void do_work(void* ctx UNUSED, size_t i) {
                       *b = mmap(0, bsize, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
         assert (g != MAP_FAILED && b != MAP_FAILED);
         if (gsize != bsize || 0 != memcmp(g, b, gsize)) {
-            work[i].diffA = diff_pngs(g, gsize, b, bsize);
-            struct bitmap* d = &work[i].diffA;
-            work[i].diffB = (struct bitmap) { _mm_malloc(4*d->w*d->h, 16), d->w, d->h };
-            struct bitmap* dB = &work[i].diffB;
+            struct bitmap dA, dB;
+            diff_pngs(g, gsize, b, bsize, &dA, &dB);
 
-            if (d->pixels) {
-                __m128i max = _mm_setzero_si128();
-                __m128i diffs = _mm_setzero_si128();
-                size_t p = 0;
-                for (; p < d->w*d->h/4*4; p += 4) {
-                    __m128i p4 = _mm_load_si128((const __m128i*)(d->pixels+p));
+            if (dA.pixels) {
+                __m128i zero  = _mm_setzero_si128(),
+                        diffs = zero,
+                        max   = zero;
+                size_t p = 0, n = dA.w*dA.h;
+                for (; p < n/4*4; p += 4) {
+                    __m128i d4 = _mm_load_si128((const __m128i*)(dA.pixels+p));
+
                     diffs = _mm_add_epi32(diffs,
-                            _mm_add_epi32(_mm_set1_epi32(1),
-                                          _mm_cmpeq_epi32(p4, _mm_setzero_si128())));
-                    max = _mm_max_epu8(max, p4);
-                    __m128i p4b = _mm_xor_si128(_mm_cmpeq_epi8(p4, _mm_setzero_si128()), _mm_set1_epi32(0x00ffffff));
-                    p4 = _mm_xor_si128(p4, _mm_set1_epi32((int)0xff000000));
-                    _mm_store_si128((__m128i*)(d->pixels+p), p4);
-                    _mm_store_si128((__m128i*)(dB->pixels+p), p4b);
+                            _mm_add_epi32(_mm_set1_epi32(1), _mm_cmpeq_epi32(d4, zero)));
+                    max = _mm_max_epu8(max, d4);
+
+                    _mm_store_si128((__m128i*)(dA.pixels+p),
+                            _mm_xor_si128(_mm_set1_epi32((int)0xff000000), d4));
+                    _mm_store_si128((__m128i*)(dB.pixels+p),
+                            _mm_xor_si128(_mm_set1_epi32(0x00ffffff), _mm_cmpeq_epi8(d4, zero)));
                 }
-                for (; p < d->w*d->h; p++) {
-                    __m128i p1 = _mm_cvtsi32_si128((int)d->pixels[p]);
+                for (; p < n; p++) {
+                    __m128i d1 = _mm_cvtsi32_si128((int)dA.pixels[p]);
+
                     diffs = _mm_add_epi32(diffs,
-                            _mm_add_epi32(_mm_set1_epi32(1),
-                                          _mm_cmpeq_epi32(p1, _mm_setzero_si128())));
-                    max = _mm_max_epu8(max, p1);
-                    __m128i p1b = _mm_xor_si128(_mm_cmpeq_epi8(p1, _mm_setzero_si128()), _mm_set1_epi32(0x00ffffff));
-                    p1 = _mm_xor_si128(p1, _mm_set1_epi32((int)0xff000000));
-                    d->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p1);
-                    dB->pixels[p] = (uint32_t)_mm_cvtsi128_si32(p1b);
+                            _mm_add_epi32(_mm_set1_epi32(1), _mm_cmpeq_epi32(d1, zero)));
+                    max = _mm_max_epu8(max, d1);
+
+                    dA.pixels[p] = (uint32_t)_mm_cvtsi128_si32(
+                            _mm_xor_si128(_mm_set1_epi32((int)0xff000000), d1));
+                    dB.pixels[p] = (uint32_t)_mm_cvtsi128_si32(
+                            _mm_xor_si128(_mm_set1_epi32(0x00ffffff), _mm_cmpeq_epi8(d1, zero)));
                 }
                 diffs = _mm_add_epi32(diffs, _mm_srli_si128(diffs, 8));
                 diffs = _mm_add_epi32(diffs, _mm_srli_si128(diffs, 4));
                 max = _mm_max_epu8(max, _mm_srli_si128(max, 8));
                 max = _mm_max_epu8(max, _mm_srli_si128(max, 4));
 
-                work[i].diffs =           _mm_cvtsi128_si32(diffs);
-                work[i].max   = (uint32_t)_mm_cvtsi128_si32(max);
+                work[i].pixels = n;
+                work[i].diffs  = (  size_t)_mm_cvtsi128_si32(diffs);
+                work[i].max    = (uint32_t)_mm_cvtsi128_si32(max);
 
-                uint32_t h = hash(d->pixels, d->w*d->h);
-
+                uint32_t h;
                 char hashpng[dlen + 1 + 8 + 4 + 1];
-                sprintf(hashpng, "%s/%08x.png", diff, h);
 
+                h = hash(dA.pixels, n);
+                sprintf(hashpng, "%s/%08x.png", diff, h);
                 work[i].dpathA = strdup(hashpng);
                 if (0 != stat(hashpng, &st)) {
-                    dump_png(work[i].diffA, work[i].dpathA);
+                    dump_png(dA, work[i].dpathA);
                 }
 
-                h = hash(dB->pixels, d->w*d->h);
+                h = hash(dB.pixels, n);
                 sprintf(hashpng, "%s/%08x.png", diff, h);
                 work[i].dpathB = strdup(hashpng);
                 if (0 != stat(hashpng, &st)) {
-                    dump_png(work[i].diffB, work[i].dpathB);
+                    dump_png(dB, work[i].dpathB);
                 }
             }
+            _mm_free(dA.pixels);
+            _mm_free(dB.pixels);
         }
         munmap((void*)g, gsize);
         munmap((void*)b, bsize);
@@ -280,10 +287,10 @@ int main(int argc, char** argv) {
     fprintf(u, "<html><style>%s</style><table>", style);
 
     for (size_t i = 0; i < nwork; i++) {
-        if (!work[i].diffs) {
+        if (work[i].diffs == 0) {
             continue;
         }
-        double diffpercent = 100.0 * work[i].diffs / work[i].diffA.w / work[i].diffA.h;
+        double diffpercent = 100.0 * work[i].diffs / work[i].pixels;
         printf("%5.2f%% %08x %s %s\n",
                 diffpercent, work[i].max, work[i].dpathB, work[i].dpathA);
         fprintf(u, "<tr><th>%5.2f%%"
