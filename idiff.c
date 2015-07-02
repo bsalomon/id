@@ -20,6 +20,15 @@
 #define MANY 1024*1024
 #define NOPENFD 100
 
+static char static_memory[MANY], *static_memory_next = static_memory;
+static char* static_strdup(const char* s) {
+   size_t len = strlen(s)+1;
+   char* d = static_memory_next;
+   static_memory_next += len;
+   memcpy(d, s, len);
+   return d;
+}
+
 static const char *good = "good",
                   *bad  = "bad",
                   *ugly = "ugly.html",
@@ -28,7 +37,7 @@ static size_t glen, blen, dlen;
 
 static size_t nwork = 0;
 static struct {
-    char *gpath, *bpath, *dpathA, *dpathB;  // on heap, clean up with free()
+    char *gpath, *bpath, *dpathA, *dpathB;  // bpath is on heap
     size_t pixels, diffs;
     uint32_t max;
 
@@ -39,7 +48,7 @@ static int find_work(const char* fpath, const struct stat* sb UNUSED, int type) 
     if (type == FTW_F) {
         size_t len = strlen(fpath);
         if (len > 4 && 0 == strcmp(".png", fpath+len-4)) {
-            work[nwork].gpath = strdup(fpath);
+            work[nwork].gpath = static_strdup(fpath);
             work[nwork].bpath = malloc(len + blen - glen + 1);
             strcat(strcpy(work[nwork].bpath, bad), fpath+glen);
             nwork++;
@@ -224,14 +233,14 @@ static void do_work(void* ctx UNUSED, size_t i) {
 
                 h = hash(dA.pixels, n);
                 sprintf(hashpng, "%s/%08x.png", diff, h);
-                work[i].dpathA = strdup(hashpng);
+                work[i].dpathA = static_strdup(hashpng);
                 if (0 != stat(hashpng, &st)) {
                     dump_png(dA, work[i].dpathA);
                 }
 
                 h = hash(dB.pixels, n);
                 sprintf(hashpng, "%s/%08x.png", diff, h);
-                work[i].dpathB = strdup(hashpng);
+                work[i].dpathB = static_strdup(hashpng);
                 if (0 != stat(hashpng, &st)) {
                     dump_png(dB, work[i].dpathB);
                 }
@@ -311,10 +320,7 @@ int main(int argc, char** argv) {
     printf("%s\n", ugly);
 
     for (size_t i = 0; i < nwork; i++) {
-        free(work[i].gpath);
         free(work[i].bpath);
-        free(work[i].dpathA);
-        free(work[i].dpathB);
     }
 
     return 0;
