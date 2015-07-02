@@ -20,13 +20,19 @@
 #define MANY 1024*1024
 #define NOPENFD 100
 
-static char static_memory[MANY], *static_memory_next = static_memory;
+static char static_memory[MANY];
+static char* salloc(size_t len) {
+    static char* end = static_memory;
+    char* p = end;
+    end += len;
+    return p;
+}
+
+static char static_memory[MANY];
 static char* static_strdup(const char* s) {
-   size_t len = strlen(s)+1;
-   char* d = static_memory_next;
-   static_memory_next += len;
-   memcpy(d, s, len);
-   return d;
+    size_t len = strlen(s)+1;
+    char* d = salloc(len);
+    return memcpy(d, s, len);
 }
 
 static const char *good = "good",
@@ -37,7 +43,7 @@ static size_t glen, blen, dlen;
 
 static size_t nwork = 0;
 static struct {
-    char *gpath, *bpath, *dpathA, *dpathB;  // bpath is on heap
+    char *gpath, *bpath, *dpathA, *dpathB;
     size_t pixels, diffs;
     uint32_t max;
 
@@ -49,7 +55,7 @@ static int find_work(const char* fpath, const struct stat* sb UNUSED, int type) 
         size_t len = strlen(fpath);
         if (len > 4 && 0 == strcmp(".png", fpath+len-4)) {
             work[nwork].gpath = static_strdup(fpath);
-            work[nwork].bpath = malloc(len + blen - glen + 1);
+            work[nwork].bpath = salloc(len + blen - glen + 1);
             strcat(strcpy(work[nwork].bpath, bad), fpath+glen);
             nwork++;
         }
@@ -183,8 +189,8 @@ static void do_work(void* ctx UNUSED, size_t i) {
         fstat(bfd, &st);
         size_t bsize = (size_t)st.st_size;
 
-        const uint8_t *g = mmap(0, gsize, PROT_READ, MAP_FILE|MAP_PRIVATE, gfd, 0),
-                      *b = mmap(0, bsize, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
+        uint8_t *g = mmap(0, gsize, PROT_READ, MAP_FILE|MAP_PRIVATE, gfd, 0),
+                *b = mmap(0, bsize, PROT_READ, MAP_FILE|MAP_PRIVATE, bfd, 0);
         assert (g != MAP_FAILED && b != MAP_FAILED);
         if (gsize != bsize || 0 != memcmp(g, b, gsize)) {
             struct bitmap dA, dB;
@@ -318,10 +324,6 @@ int main(int argc, char** argv) {
     }
     fclose(u);
     printf("%s\n", ugly);
-
-    for (size_t i = 0; i < nwork; i++) {
-        free(work[i].bpath);
-    }
 
     return 0;
 }
