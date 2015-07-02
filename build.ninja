@@ -8,7 +8,7 @@ rule compile
     deps    = gcc
 
 rule link
-    command = $cc $args $in -o $out
+    command = $cc $in $args -o $out
 
 build out/idiff.o: compile idiff.c
     args = -I`which brew && brew --prefix`/include

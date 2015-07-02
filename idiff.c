@@ -15,6 +15,10 @@
     #include <dispatch/dispatch.h>
 #endif
 
+#if !defined(MAP_FILE)
+    #define MAP_FILE 0  // GCC/Linux doesn't seem to define this. Clang does, and GCC/Mac does too.
+#endif
+
 #define UNUSED __attribute__((unused))
 
 #define MANY 1024*1024
