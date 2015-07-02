@@ -11,6 +11,6 @@ rule link
     command = $cc $in $args -o $out
 
 build out/idiff.o: compile idiff.c
-    args = -I`which brew && brew --prefix`/include
+    args = -I`which brew >/dev/null && brew --prefix`/include
 build out/idiff: link out/idiff.o
-    args = -L`which brew && brew --preifx`/lib -lpng
+    args = -L`which brew >/dev/null && brew --prefix`/lib -lpng
