@@ -3,7 +3,7 @@ builddir = out
 cc = clang -Weverything -Wno-vla -Wno-cast-align -fcolor-diagnostics
 
 rule compile
-    command = $cc -Werror -g -O3 -march=native -MD -MF $out.d $args -c $in -o $out
+    command = $cc -Werror -std=c99 -g -O3 -march=native -MD -MF $out.d $args -c $in -o $out
     depfile = $out.d
     deps    = gcc
 
