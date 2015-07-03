@@ -32,7 +32,6 @@ static char* salloc(size_t len) {
     return p;
 }
 
-static char static_memory[MANY];
 static char* static_strdup(const char* s) {
     size_t len = strlen(s)+1;
     char* d = salloc(len);
