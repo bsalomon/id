@@ -1,2 +1,0 @@
-include build.ninja
-cc = `which gcc-5 || echo gcc` -fsanitize=address -Wa,-q -fopenmp -Wall -Wextra

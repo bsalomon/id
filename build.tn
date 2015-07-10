@@ -1,0 +1,27 @@
+builddir = out
+
+cc = clang
+
+[cc clang] cc_cflags  = -Weverything -Wno-vla -Wno-cast-align -fcolor-diagnostics
+[cc gcc-5] cc_cflags  = -Wall -Wextra -Wa,-q -fopenmp
+[cc gcc-5] cc_ldflags = -fopenmp
+
+[os Darwin] inc_dirs = -I`brew --prefix`/include
+[os Darwin] lib_dirs = -L`brew --prefix`/lib
+
+[asan 1] sanitize = -fsanitize=address
+
+cflags  = -Werror -std=c99 -g -O3 -march=native $cc_cflags $inc_dirs $sanitize
+ldflags = $cc_ldflags $lib_dirs $sanitize
+
+rule compile
+    command = $cc -MD -MF $out.d $cflags $args -c $in -o $out
+    depfile = $out.d
+    deps    = gcc
+
+rule link
+    command = $cc $in $ldflags $args -o $out
+
+build out/idiff.o: compile idiff.c
+build out/idiff: link out/idiff.o
+    args = -lpng

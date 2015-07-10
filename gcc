@@ -1,3 +1,0 @@
-include build.ninja
-
-cc = `which gcc-5 || echo gcc` -fopenmp -Wa,-q -Wall -Wextra
