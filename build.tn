@@ -5,8 +5,11 @@ cc = clang
 [cc clang] cc_cflags  = -Weverything -Wno-vla -Wno-cast-align -fcolor-diagnostics
 [cc gcc-5] cc_cflags  = -Wall -Wextra -Wa,-q
 
+[cc clang] san = address
+[cc gcc-5] san = address,undefined
+
 [cc gcc-5] openmp = -fopenmp
-[asan 1] sanitize = -fsanitize=address
+[asan 1] sanitize = -fsanitize=$san
 
 [os Darwin] inc_dirs = -I`brew --prefix`/include
 [os Darwin] lib_dirs = -L`brew --prefix`/lib
