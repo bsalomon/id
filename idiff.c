@@ -107,7 +107,12 @@ static struct bitmap read_png(const uint8_t* buf, size_t len) {
 
     size_t w = png_get_image_width (png, info),
            h = png_get_image_height(png, info);
-    uint32_t* pix = _mm_malloc(w*h*4, 16);
+
+    void* vpix = NULL;
+    posix_memalign(&vpix, 16, w*h*4);
+    uint32_t* pix = vpix;
+    assert(pix);
+
     png_bytep rows[h];
     for (size_t j = 0; j < h; j++) {
         rows[j] = (png_bytep)(pix+j*w);
@@ -148,8 +153,8 @@ static void diff_pngs(const uint8_t* gpng, size_t gsize, const uint8_t* bpng, si
     struct bitmap g = read_png(gpng, gsize),
                   b = read_png(bpng, bsize);
     if (!g.pixels || !b.pixels || g.w != b.w || g.h != b.h) {
-        _mm_free(g.pixels);
-        _mm_free(b.pixels);
+        free(g.pixels);
+        free(b.pixels);
         *dA = (struct bitmap) { NULL, 0, 0 };
         *dB = (struct bitmap) { NULL, 0, 0 };
         return;
@@ -254,8 +259,8 @@ static void do_work(void* ctx UNUSED, size_t i) {
                     dump_png(dB, work[i].dpathB);
                 }
             }
-            _mm_free(dA.pixels);
-            _mm_free(dB.pixels);
+            free(dA.pixels);
+            free(dB.pixels);
         }
         munmap((void*)g, gsize);
         munmap((void*)b, bsize);
