@@ -6,8 +6,8 @@ project(idiff)
 find_package(PNG REQUIRED)
 include_directories(${PNG_INCLUDE_DIR})
 
-# openmp is an optional dependency, but we prefer libdispatch/blocks when on Mac/Clang.
-if (CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+# openmp is an optional dependency, but we prefer GCD when on Mac.
+if (APPLE)
 else()
     find_package(OpenMP)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")

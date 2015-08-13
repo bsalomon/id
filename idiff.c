@@ -11,7 +11,7 @@
 #include <immintrin.h>
 #include <png.h>
 
-#if defined(__BLOCKS__) && defined(__APPLE__)
+#if defined(__APPLE__)
     #include <dispatch/dispatch.h>
 #endif
 
@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
 
     ftw(good, find_work, NOPENFD);
 
-#if defined(__BLOCKS__) && defined(__APPLE__)
+#if defined(__APPLE__)
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply_f(nwork, queue, NULL, do_work);
 #elif defined(_OPENMP)
