@@ -7,8 +7,7 @@ find_package(PNG REQUIRED)
 include_directories(${PNG_INCLUDE_DIR})
 
 # openmp is an optional dependency, but we prefer GCD when on Mac.
-if (APPLE)
-else()
+if (NOT APPLE)
     find_package(OpenMP)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
 endif()
