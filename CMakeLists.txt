@@ -13,10 +13,10 @@ endif()
 
 # Turn on as many warnings as we can stomach in Debug mode.
 set (CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Werror")
-if (CMAKE_C_COMPILER_ID MATCHES "GNU")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Wall -Wextra")
-elseif (CMAKE_C_COMPILER_ID MATCHES "Clang")
+if (CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Weverything -Wno-vla -Wno-cast-align")
+else()
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -Wall -Wextra")
 endif()
 
 # idiff.c uses _mm_crc32_u32, so we need SSE4.2+.
