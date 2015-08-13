@@ -1,14 +1,17 @@
 # Boilerplate.
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.0)
 project(idiff)
 
 # libpng is a required dependency.
 find_package(PNG REQUIRED)
 include_directories(${PNG_INCLUDE_DIR})
 
-# openmp is an optional dependency.
-find_package(OpenMP QUIET)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+# openmp is an optional dependency, but we prefer libdispatch/blocks when on Mac/Clang.
+if (CMAKE_C_COMPILER_ID MATCHES "AppleClang")
+else()
+    find_package(OpenMP)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+endif()
 
 # Default to Release mode.
 if (NOT CMAKE_BUILD_TYPE)
