@@ -1,1 +1,10 @@
 *.swp
+
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+*.ninja
+.ninja*
+cmake_install.cmake
+
+idiff
