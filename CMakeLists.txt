@@ -2,9 +2,13 @@
 cmake_minimum_required(VERSION 2.6)
 project(idiff)
 
-# Dependencies.
+# libpng is a required dependency.
 find_package(PNG REQUIRED)
 include_directories(${PNG_INCLUDE_DIR})
+
+# openmp is an optional dependency.
+find_package(OpenMP QUIET)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
 
 # Default to Release mode.
 if (NOT CMAKE_BUILD_TYPE)
