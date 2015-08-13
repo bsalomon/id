@@ -27,9 +27,9 @@ else()
 endif()
 
 # Turn on as many sanitizers as we can stomach in Debug mode.
-if (CMAKE_C_COMPILER_ID MATCHES "Clang")
+if (CMAKE_C_COMPILER_ID MATCHES "AppleClang")
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fsanitize=address")
-elseif (CMAKE_C_COMPILER_ID MATCHES "GNU")
+elseif (CMAKE_C_COMPILER_ID MATCHES "GNU" OR CMAKE_COMPILER_ID MATCHES "Clang")
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fsanitize=address,undefined")
 endif()
 
